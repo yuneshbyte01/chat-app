@@ -13,4 +13,5 @@ public class ChatMessage {
     private String type;      // CHAT, JOIN, LEAVE, PRIVATE
     private String timestamp;
     private String recipient; // NEW: username of the target recipient (for private chat)
+    private String room;    // NEW: chat room identifier (for group chats)
 }

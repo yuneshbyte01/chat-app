@@ -1,18 +1,16 @@
 package com.yunesh.chatapp.controller;
 
 import com.yunesh.chatapp.dto.ChatMessage;
+import lombok.AllArgsConstructor;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 @Controller
+@AllArgsConstructor
 public class ChatController {
 
     private final SimpMessagingTemplate messagingTemplate;
-
-    public ChatController(SimpMessagingTemplate messagingTemplate) {
-        this.messagingTemplate = messagingTemplate;
-    }
 
     @MessageMapping("/chat") // Client sends it to: /app/chat
     public void sendMessage(ChatMessage message) {
@@ -24,8 +22,12 @@ public class ChatController {
                     message.getRecipient(), "/queue/messages", message
             );
         } else {
-            // Group broadcast
-            messagingTemplate.convertAndSend("/topic/messages", message);
+            // Room-based broadcast (if room is set) or fallback to general
+            String destination = (message.getRoom() != null && !message.getRoom().isEmpty())
+                    ? "/topic/room/" + message.getRoom()
+                    : "/topic/messages";
+
+            messagingTemplate.convertAndSend(destination, message);
         }
     }
 }

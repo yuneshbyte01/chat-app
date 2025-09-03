@@ -10,7 +10,7 @@
         }
         /* Sidebar */
         #sidebar {
-            width: 220px; background: #f4f4f8; border-right: 1px solid #ccc;
+            width: 240px; background: #f4f4f8; border-right: 1px solid #ccc;
             display: flex; flex-direction: column;
         }
         #sidebar h2 { padding: 15px; margin: 0; }
@@ -39,12 +39,21 @@
         }
         #input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
         #send { margin-left: 10px; padding: 10px 20px; }
+        #roomBox { padding: 10px; border-bottom: 1px solid #ccc; }
+        #roomInput { width: 65%; padding: 5px; }
+        #joinRoom { padding: 5px 10px; }
     </style>
 </head>
 <body>
 <!-- Sidebar -->
 <div id="sidebar">
     <h2>Chats</h2>
+    <!-- Room input -->
+    <div id="roomBox">
+        <input id="roomInput" type="text" placeholder="Enter room..." />
+        <button id="joinRoom">Join</button>
+    </div>
+    <!-- Contacts -->
     <div id="contacts">
         <div class="contact active" onclick="openChat('', this)">
             <img src="https://i.pravatar.cc/40?u=group" alt="Group">
@@ -77,6 +86,9 @@
     let stompClient = null;
     const username = prompt("Enter your name:") || "Anonymous";
     let activeChat = ""; // blank = group
+    let currentRoom = ""; // blank = no room
+    let currentRoomSubscription = null;
+    let joinedRooms = [];
 
     function connect() {
         const socket = new SockJS('/ws-chat');
@@ -85,7 +97,7 @@
         stompClient.connect({}, frame => {
             console.log('✅ Connected: ' + frame);
 
-            // Group chat subscription
+            // General group chat subscription
             stompClient.subscribe('/topic/messages', msg => {
                 showMessage(JSON.parse(msg.body));
             });
@@ -105,16 +117,11 @@
             const payload = {
                 sender: username,
                 content: content,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                type: activeChat ? "PRIVATE" : "CHAT",
+                recipient: activeChat || null,
+                room: currentRoom
             };
-
-            if (activeChat) {
-                payload.type = "PRIVATE";
-                payload.recipient = activeChat;
-            } else {
-                payload.type = "CHAT";
-                payload.recipient = null;
-            }
 
             console.log("📤 Sending:", payload);
             stompClient.send("/app/chat", {}, JSON.stringify(payload));
@@ -126,7 +133,8 @@
         const div = document.createElement('div');
         div.className = 'msg ' + (message.sender === username ? 'me' : 'them');
         div.innerHTML = `<b>${message.sender}</b>: ${message.content}` +
-            (isPrivate ? " <i>(private)</i>" : "");
+            (isPrivate ? " <i>(private)</i>" : "") +
+            (message.room ? ` <small>[#${message.room}]</small>` : "");
         document.getElementById('messages').appendChild(div);
         document.getElementById('messages').scrollTop =
             document.getElementById('messages').scrollHeight;
@@ -134,6 +142,7 @@
 
     function openChat(name, element) {
         activeChat = name;
+        currentRoom = ""; // reset room if switching to user/group
 
         // Update sidebar highlight
         document.querySelectorAll('.contact').forEach(c => c.classList.remove('active'));
@@ -146,9 +155,63 @@
                 : `<div><em>Now in Group Chat</em></div>`;
     }
 
+    function openRoom(roomName, element) {
+        activeChat = "";
+        currentRoom = roomName;
+
+        // Update sidebar highlight
+        document.querySelectorAll('.contact').forEach(c => c.classList.remove('active'));
+        element.classList.add('active');
+
+        // Reset chat view
+        document.getElementById('messages').innerHTML =
+            `<div><em>Now in room: ${roomName}</em></div>`;
+    }
+
     document.getElementById('send').addEventListener('click', sendMessage);
     document.getElementById('input').addEventListener('keyup', e => {
         if (e.key === 'Enter') sendMessage();
+    });
+
+    // Join room logic
+    document.getElementById('joinRoom').addEventListener('click', () => {
+        const roomName = document.getElementById('roomInput').value.trim();
+        if (roomName !== "") {
+            activeChat = "";
+
+            // Unsubscribe from the old room
+            if (currentRoomSubscription) {
+                currentRoomSubscription.unsubscribe();
+            }
+
+            // Subscribe to a new room
+            currentRoom = roomName;
+            currentRoomSubscription = stompClient.subscribe(`/topic/room/${currentRoom}`, msg => {
+                showMessage(JSON.parse(msg.body));
+            });
+
+            // Add room to the sidebar if not already listed
+            if (!joinedRooms.includes(roomName)) {
+                joinedRooms.push(roomName);
+
+                const contacts = document.getElementById('contacts');
+                const div = document.createElement('div');
+                div.className = 'contact';
+                div.onclick = () => openRoom(roomName, div);
+                div.innerHTML = `
+                    <img src="https://i.pravatar.cc/40?u=${roomName}" alt="${roomName}">
+                    <div><strong>#${roomName}</strong></div>
+                `;
+                contacts.appendChild(div);
+            }
+
+            // Reset chat view
+            document.getElementById('messages').innerHTML = `<div><em>Now in room: ${currentRoom}</em></div>`;
+            console.log("🔗 Joined room:", currentRoom);
+
+            // Clear active sidebar highlight
+            document.querySelectorAll('.contact').forEach(c => c.classList.remove('active'));
+        }
     });
 
     connect();
