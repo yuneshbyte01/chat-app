@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #chat { height: 70vh; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        #input { width: 70%; padding: 10px; }
+        #send { padding: 10px 20px; }
+        .message { margin-bottom: 8px; }
+        .sender { font-weight: bold; }
+        .timestamp { font-size: 0.8em; color: gray; margin-left: 5px; }
+    </style>
+</head>
+<body>
+<h2>Group Chat</h2>
+<div id="chat"></div>
+<input type="text" id="input" placeholder="Type a message..." />
+<button id="send">Send</button>
+
+<!-- ✅ Load libraries BEFORE your script -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.5.2/dist/sockjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+<script>
+    let stompClient = null;
+    const username = prompt("Enter your name:") || "Anonymous";
+
+    function connect() {
+        const socket = new SockJS('/ws-chat');
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null; // silence logs
+        stompClient.connect({}, function(frame) {
+            console.log('✅ Connected: ' + frame);
+            stompClient.subscribe('/topic/messages', function(message) {
+                console.log("📩 Incoming:", message.body);
+                showMessage(JSON.parse(message.body));
+            });
+        }, function(error) {
+            console.error("❌ STOMP error:", error);
+        });
+    }
+
+    function sendMessage() {
+        const content = document.getElementById('input').value;
+        if(content.trim() !== '' && stompClient && stompClient.connected) {
+            stompClient.send("/app/chat", {}, JSON.stringify({
+                sender: username,
+                content: content,
+                type: "CHAT"
+            }));
+            document.getElementById('input').value = '';
+        } else {
+            console.warn("⚠️ Not connected, cannot send message.");
+        }
+    }
+
+    function showMessage(message) {
+        const chat = document.getElementById('chat');
+        const div = document.createElement('div');
+        div.className = 'message';
+        div.innerHTML = `
+            <span class="sender">${message.sender}:</span>
+            ${message.content}
+            <span class="timestamp">[${message.timestamp}]</span>`;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    document.getElementById('send').addEventListener('click', sendMessage);
+    document.getElementById('input').addEventListener('keyup', function(e) {
+        if(e.key === 'Enter') sendMessage();
+    });
+
+    connect();
+</script>
+</body>
+</html>
