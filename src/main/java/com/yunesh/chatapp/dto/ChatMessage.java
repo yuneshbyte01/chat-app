@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 public class ChatMessage {
     private String sender;
     private String content;
-    private String type; // CHAT, JOIN, LEAVE
+    private String type;      // CHAT, JOIN, LEAVE, PRIVATE
     private String timestamp;
+    private String recipient; // NEW: username of the target recipient (for private chat)
 }
-

@@ -4,73 +4,151 @@
     <meta charset="UTF-8">
     <title>Chat App</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        #chat { height: 70vh; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
-        #input { width: 70%; padding: 10px; }
-        #send { padding: 10px 20px; }
-        .message { margin-bottom: 8px; }
-        .sender { font-weight: bold; }
-        .timestamp { font-size: 0.8em; color: gray; margin-left: 5px; }
+        body {
+            margin: 0; font-family: Arial, sans-serif;
+            display: flex; height: 100vh; overflow: hidden;
+        }
+        /* Sidebar */
+        #sidebar {
+            width: 220px; background: #f4f4f8; border-right: 1px solid #ccc;
+            display: flex; flex-direction: column;
+        }
+        #sidebar h2 { padding: 15px; margin: 0; }
+        #contacts { flex: 1; overflow-y: auto; }
+        .contact {
+            display: flex; align-items: center; padding: 10px; cursor: pointer;
+        }
+        .contact:hover { background: #e6e6f0; }
+        .contact img { width: 36px; height: 36px; border-radius: 50%; margin-right: 10px; }
+        .active { background: #d6d6f0; }
+        /* Chat window */
+        #chat-container {
+            flex: 1; display: flex; flex-direction: column;
+        }
+        #messages {
+            flex: 1; padding: 20px; overflow-y: auto; background: #fff;
+        }
+        .msg {
+            margin-bottom: 12px; max-width: 60%;
+            padding: 10px; border-radius: 10px; clear: both;
+        }
+        .me { background: #007bff; color: #fff; margin-left: auto; }
+        .them { background: #e6e6e6; margin-right: auto; }
+        #input-bar {
+            display: flex; padding: 10px; border-top: 1px solid #ccc;
+        }
+        #input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        #send { margin-left: 10px; padding: 10px 20px; }
     </style>
 </head>
 <body>
-<h2>Group Chat</h2>
-<div id="chat"></div>
-<input type="text" id="input" placeholder="Type a message..." />
-<button id="send">Send</button>
+<!-- Sidebar -->
+<div id="sidebar">
+    <h2>Chats</h2>
+    <div id="contacts">
+        <div class="contact active" onclick="openChat('', this)">
+            <img src="https://i.pravatar.cc/40?u=group" alt="Group">
+            <div><strong>Group Chat</strong></div>
+        </div>
+        <div class="contact" onclick="openChat('Alice', this)">
+            <img src="https://i.pravatar.cc/40?u=alice" alt="Alice">
+            <div><strong>Alice</strong></div>
+        </div>
+        <div class="contact" onclick="openChat('Bob', this)">
+            <img src="https://i.pravatar.cc/40?u=bob" alt="Bob">
+            <div><strong>Bob</strong></div>
+        </div>
+    </div>
+</div>
 
-<!-- ✅ Load libraries BEFORE your script -->
-<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.5.2/dist/sockjs.min.js"></script>
+<!-- Chat window -->
+<div id="chat-container">
+    <div id="messages"><div><em>Now in Group Chat</em></div></div>
+    <div id="input-bar">
+        <input id="input" type="text" placeholder="Write a message...">
+        <button id="send">Send</button>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
-
 <script>
     let stompClient = null;
     const username = prompt("Enter your name:") || "Anonymous";
+    let activeChat = ""; // blank = group
 
     function connect() {
         const socket = new SockJS('/ws-chat');
         stompClient = Stomp.over(socket);
-        stompClient.debug = null; // silence logs
-        stompClient.connect({}, function(frame) {
+        stompClient.debug = null;
+        stompClient.connect({}, frame => {
             console.log('✅ Connected: ' + frame);
-            stompClient.subscribe('/topic/messages', function(message) {
-                console.log("📩 Incoming:", message.body);
-                showMessage(JSON.parse(message.body));
+
+            // Group chat subscription
+            stompClient.subscribe('/topic/messages', msg => {
+                showMessage(JSON.parse(msg.body));
             });
-        }, function(error) {
+
+            // Private messages subscription
+            stompClient.subscribe('/user/queue/messages', msg => {
+                showMessage(JSON.parse(msg.body), true);
+            });
+        }, error => {
             console.error("❌ STOMP error:", error);
         });
     }
 
     function sendMessage() {
         const content = document.getElementById('input').value;
-        if(content.trim() !== '' && stompClient && stompClient.connected) {
-            stompClient.send("/app/chat", {}, JSON.stringify({
+        if (content.trim() !== '' && stompClient && stompClient.connected) {
+            const payload = {
                 sender: username,
                 content: content,
-                type: "CHAT"
-            }));
+                timestamp: new Date().toISOString()
+            };
+
+            if (activeChat) {
+                payload.type = "PRIVATE";
+                payload.recipient = activeChat;
+            } else {
+                payload.type = "CHAT";
+                payload.recipient = null;
+            }
+
+            console.log("📤 Sending:", payload);
+            stompClient.send("/app/chat", {}, JSON.stringify(payload));
             document.getElementById('input').value = '';
-        } else {
-            console.warn("⚠️ Not connected, cannot send message.");
         }
     }
 
-    function showMessage(message) {
-        const chat = document.getElementById('chat');
+    function showMessage(message, isPrivate=false) {
         const div = document.createElement('div');
-        div.className = 'message';
-        div.innerHTML = `
-            <span class="sender">${message.sender}:</span>
-            ${message.content}
-            <span class="timestamp">[${message.timestamp}]</span>`;
-        chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight;
+        div.className = 'msg ' + (message.sender === username ? 'me' : 'them');
+        div.innerHTML = `<b>${message.sender}</b>: ${message.content}` +
+            (isPrivate ? " <i>(private)</i>" : "");
+        document.getElementById('messages').appendChild(div);
+        document.getElementById('messages').scrollTop =
+            document.getElementById('messages').scrollHeight;
+    }
+
+    function openChat(name, element) {
+        activeChat = name;
+
+        // Update sidebar highlight
+        document.querySelectorAll('.contact').forEach(c => c.classList.remove('active'));
+        element.classList.add('active');
+
+        // Reset chat view
+        document.getElementById('messages').innerHTML =
+            activeChat
+                ? `<div><em>Now chatting with ${name}</em></div>`
+                : `<div><em>Now in Group Chat</em></div>`;
     }
 
     document.getElementById('send').addEventListener('click', sendMessage);
-    document.getElementById('input').addEventListener('keyup', function(e) {
-        if(e.key === 'Enter') sendMessage();
+    document.getElementById('input').addEventListener('keyup', e => {
+        if (e.key === 'Enter') sendMessage();
     });
 
     connect();
